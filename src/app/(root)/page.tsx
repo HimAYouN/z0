@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { GlassNavbar } from "@/components/home/glass-navbar";
 import { HomeBackground } from "@/components/home/home-background";
-// import { ProjectGrid } from "@/components/home/project-grid";
+import { ProjectGrid } from "@/components/home/project-grid";
 import { PromptInput } from "@/components/home/prompt-input";
 
 /**
@@ -25,7 +25,7 @@ export default async function Home() {
         </div>
 
         <div className="mt-16 w-full max-w-5xl">
-          {/* <ProjectGrid /> */}
+          <ProjectGrid />
         </div>
       </main>
     </div>
