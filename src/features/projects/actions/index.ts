@@ -33,6 +33,13 @@ export async function createProject (value: string){
 
 
         //SEND PROJECT TO INNGEST 
+        await inngest.send({
+            name: "code-agent/run",
+            data: {
+                value,
+                projectId:project.id
+            }
+        })
 
         return project
     } catch (error) {
