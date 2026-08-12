@@ -79,4 +79,3 @@ export function lastAssistantTextMessageContent(result){
   return message?.content ? typeof message.content === "string" ? message.content : message.content.map((c)=>c.text).join("") : undefined
 }
 
-export const AI_Model_Version = "gemini-3.5-flash"
