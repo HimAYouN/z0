@@ -57,7 +57,7 @@ export function Chai0Logo({
     <span className={cn("inline-flex items-center gap-2.5 text-foreground", className)}>
       <Chai0Mark className="h-7 w-auto" />
       {showWordmark ? (
-        <span className="text-base font-semibold tracking-tight">chai0</span>
+        <span className="text-base font-semibold tracking-tight">z0</span>
       ) : null}
     </span>
   );
