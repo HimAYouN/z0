@@ -78,4 +78,3 @@ export function lastAssistantTextMessageContent(result){
 
   return message?.content ? typeof message.content === "string" ? message.content : message.content.map((c)=>c.text).join("") : undefined
 }
-

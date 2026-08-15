@@ -3,11 +3,23 @@ import { prisma } from "@/lib/db";
 import { inngest } from "./client";
 import { Sandbox } from "@e2b/code-interpreter";
 import { MessageRole, MessageType } from "@/generated/prisma/enums";
-import { createAgent, createNetwork, createState, createTool, gemini, openai } from "@inngest/agent-kit";
+import {
+  createAgent,
+  createNetwork,
+  createState,
+  createTool,
+  gemini,
+  openai,
+} from "@inngest/agent-kit";
 
 import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from "@/lib/prompts";
-import z  from "zod";
-import { agentOutputText,  captureTaskSummary, connectSandbox } from "./utils";
+import z from "zod";
+import {
+  agentOutputText,
+  captureTaskSummary,
+  connectSandbox,
+  lastAssistantTextMessageContent,
+} from "./utils";
 
 export interface CodeAgentState {
   sandboxId: string;
@@ -96,52 +108,69 @@ export const codeAgentFunction = inngest.createFunction(
         //Terminal
         createTool({
           name: "terminal",
-          description: " Use the terminal to run  commands",
-          parameters: z.object({ command: z.string() }),
-          handler: async ({ command }, { step: toolStep, network }) => {
-            return toolStep?.run(`terminal-${command}`, async () => {
+          description: "Use the terminal to run commands",
+          parameters: z.object({
+            command: z.string(),
+          }),
+          handler: async ({ command }, { step: toolStep }) => {
+            return await toolStep?.run(`terminal-${command}`, async () => {
               const buffers = { stdout: "", stderr: "" };
+
               try {
-                const sandbox = await connectSandbox(
-                  network.state.data.sandboxId,
-                );
+                const sandbox = await Sandbox.connect(sandboxId);
 
                 const result = await sandbox.commands.run(command, {
-                  onStdout(data) {
+                  onStdout: (data) => {
                     buffers.stdout += data;
                   },
-                  onStderr(data) {
+                  onStderr: (data) => {
                     buffers.stderr += data;
                   },
                 });
+
                 return result.stdout;
               } catch (error) {
-                return `Command failed: ${error}\nstdout: ${buffers.stdout}\nstderr: ${buffers.stderr}`;
+                console.log(
+                  `Command failed: ${error} \n stdout: ${buffers.stdout}\n stderr: ${buffers.stderr}`
+                );
+
+                return `Command failed: ${error} \n stdout: ${buffers.stdout}\n stderr: ${buffers.stderr}`;
               }
             });
           },
         }),
         // 2. createOrUpdateFiles
         createTool({
-          name: "createOrUpdateFiles",
-          description: "Create or update one file in the sanbox. Call this tool once per file with a relative path and full file contents.",
+          name: "createOrUpdateFile",
+          description:
+            "Create or update one file in the sandbox. Call this tool once per file with a relative path and full file contents.",
           parameters: z.object({
-            path: z.string().describe("Relative file path e.g app/page.tsx"),
-            content: z.string().describe("Full content of the file")
+            path: z
+              .string()
+              .describe("Relative file path, e.g. app/page.tsx"),
+            content: z.string().describe("Full contents of the file"),
           }),
           handler: async ({ path, content }, { step: toolStep, network }) => {
-             return toolStep?.run(`create-or-update-file-${path}`, async()=>{
-              try {
-                const sandbox = await Sandbox.connect(network.state.data.sandboxId)
+            const newFiles = await toolStep?.run(
+              `create-or-update-file-${path}`,
+              async () => {
+                try {
+                  const updatedFiles = network?.state?.data.files || {};
 
-                await sandbox.files.write(path, content);
-                network.state.data.files[path] = content;
-                return `File ${path} created or updated`;
+                  const sandbox = await Sandbox.connect(sandboxId);
+                  await sandbox.files.write(path, content);
+                  updatedFiles[path] = content;
 
-              } catch (error) {
-                return `Failed to create or update file ${path}: ${error}`;
+                  return updatedFiles;
+                } catch (error) {
+                  return "Error" + error;
+                }
               }
-             })
+            );
+
+            if (typeof newFiles === "object" && network) {
+              network.state.data.files = newFiles;
+            }
           },
         }),
         // 3. readFiles
@@ -152,18 +181,18 @@ export const codeAgentFunction = inngest.createFunction(
           parameters: z.object({
             files: z.array(z.string()),
           }),
-          handler: async ({ files }, { step }) => {
-            return await step?.run("readFiles", async () => {
+          handler: async ({ files }, { step: toolStep }) => {
+            return await toolStep?.run(`read-files-${files.length}`, async () => {
               try {
-                const sanbox = await Sandbox.connect(sandboxId);
+                const sandbox = await Sandbox.connect(sandboxId);
 
-                const contents:any = [];
-                console.log(contents)
+                const contents = [];
 
                 for (const file of files) {
-                  const content = await sanbox.files.read(file);
+                  const content = await sandbox.files.read(file);
                   contents.push({ path: file, content });
                 }
+
                 return JSON.stringify(contents);
               } catch (error) {
                 return "Error" + error;
@@ -172,55 +201,81 @@ export const codeAgentFunction = inngest.createFunction(
           },
         }),
       ],
-      lifecycle:{
-        onResponse: async({result, network})=>{
-          captureTaskSummary(result, network);
-          return result
-        }
-      }
+      lifecycle: {
+        onResponse: async ({ result, network }) => {
+          const lastAssistantMessageText =
+            lastAssistantTextMessageContent(result);
+
+          if (lastAssistantMessageText && network) {
+            if (lastAssistantMessageText.includes("<task_summary>")) {
+              network.state.data.summary = lastAssistantMessageText;
+            }
+          }
+
+          return result;
+        },
+      },
     });
+
     const network = createNetwork({
       name: "code-agent-network",
       agents: [codeAgent],
       maxIter: 15,
-      router: ({network})=> network.state.data.summary ? undefined : codeAgent,
+      router: async({ network }) => {
+        const summary = network.state.data.summary;
 
-      
+        if(summary){
+          return;
+        }
+
+        return codeAgent;
+      }
+
     });
-    const result = await network.run(event.data.value, {state})
 
-    const {summary, files} = result.state.data;
+    const result = await network.run(event.data.value, { state });
+    // console.log(result)
+    const { summary, files } = result.state.data;
 
-    const makeTextAgent  = (name: string, system: string)=> createAgent({name, system, model:AI_Model})
+    const makeTextAgent = (name: string, system: string) => createAgent({ name, system, model: AI_Model });
 
-    const fragmentTitleGenerator = makeTextAgent("fragment-title-generator", FRAGMENT_TITLE_PROMPT)
-    const responseGenerator = makeTextAgent("response-generator" , RESPONSE_PROMPT)
+    const fragmentTitleGenerator = makeTextAgent("fragment-title-generator", FRAGMENT_TITLE_PROMPT);
+    const responseGenerator = makeTextAgent("response-generator", RESPONSE_PROMPT);
 
-    const [{output: fragmentTitleOutput}, {output: responseOutput}] = await  Promise.all([
-      fragmentTitleGenerator.run(summary, {step}),
-      responseGenerator.run(summary, {step})
-    ])
+    const [{ output: fragmentTitleOutput }, { output: responseOutput }] = await Promise.all([
+      fragmentTitleGenerator.run(summary, { step }),
+      responseGenerator.run(summary, { step })
+    ]);
 
     const fragmentTitle = agentOutputText(fragmentTitleOutput, "Untitled");
     const responseText = agentOutputText(responseOutput, "Here you go");
 
-    const isError = !summary || Object.keys(files).length === 0
-    const sandboxUrl = await step.run("get-sandbox-url", async()=>{
-      const sandbox = await connectSandbox(sandboxId)
-      return `http://${sandbox.getHost(3000)}`
-    })
+    // console.log(files)
 
-    await step.run("save-result", async()=>{
-      if(isError){
+    const isError =
+      !result.state.data.summary ||
+      Object.keys(result.state.data.files || {}).length === 0;
+
+
+    const sandboxUrl = await step.run("get-sandbox-url", async () => {
+      const sandbox = await connectSandbox(sandboxId);
+      return `http://${sandbox.getHost(3000)}`
+    });
+
+    await step.run("save-result", async () => {
+      // console.log("ISERROR: " , isError)
+      if (isError) {
         return prisma.message.create({
           data: {
             projectId: event.data.projectId,
             content: "Something went wrong. Please try again",
             role: MessageRole.ASSISTANT,
-            type: MessageType.ERROR
-          }
+            type: MessageType.ERROR,
+          },
+
+
         })
-      }
+      };
 
       return prisma.message.create({
         data: {
@@ -229,7 +284,7 @@ export const codeAgentFunction = inngest.createFunction(
           role: MessageRole.ASSISTANT,
           type: MessageType.RESULT,
           fragments: {
-            create:{
+            create: {
               sandboxUrl,
               title: fragmentTitle,
               files
@@ -237,10 +292,14 @@ export const codeAgentFunction = inngest.createFunction(
           }
         }
       })
-    })
+    });
+
 
     return {
-      url: sandboxId, title: fragmentTitle, files, summary
-    }
+      url: sandboxId,
+      title: fragmentTitle,
+      files,
+      summary,
+    };
   },
 );
