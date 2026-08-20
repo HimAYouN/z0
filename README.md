@@ -1,39 +1,39 @@
-# z0 - AI-Powered Web Application Generator
+# z0
 
-An intelligent web application generator that uses AI to create full-featured web applications from natural language descriptions. Describe what you want to build, and z0 generates production-ready code with a live preview.
+z0 is an AI-powered web application generator. Describe an application in natural language, then review the generated code and live sandbox preview in a project workspace.
 
 ## Features
 
-- **AI-Powered Code Generation**: Describe your project in plain English and let AI generate complete, functional web applications
-- **Live Code Preview**: Execute and preview generated code in sandboxes powered by E2B
+- **AI-Powered Code Generation**: Describe your project in plain English and generate complete, functional web applications
+- **Live Code Preview**: Execute and preview generated code in E2B sandboxes
 - **Pre-Built Templates**: Quick-start with templates for common use cases:
   - Landing pages (SaaS, Product Launch, Waitlist, Portfolio)
   - Business tools (Contact Forms, Invoice Generators, Booking Calendars, CRM Dashboards)
   - Productivity apps (Todo Apps, Kanban Boards, Notes Apps, Habit Trackers)
   - Utilities (Calculators, Unit Converters, and more)
 - **Project Management**: Organize multiple projects, view history, and manage generated code fragments
-- **Secure Authentication**: User authentication powered by Clerk
-- **Database Persistence**: Save projects and generated code using Prisma with PostgreSQL
+- **Authentication**: Sign in with Clerk
+- **Project Persistence**: Save projects, conversations, and generated fragments with Prisma and PostgreSQL
 
 ## Tech Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui components
-- **Backend**: Next.js API routes, Inngest for workflow orchestration
+- **Backend**: Next.js App Router and API routes, with Inngest for workflow orchestration
 - **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: Clerk
-- **AI Integration**: Inngest Agent Kit with support for OpenAI and Gemini
-- **Code Execution**: E2B Code Interpreter for sandboxed code execution
+- **AI Integration**: Inngest Agent Kit with OpenAI
+- **Code Execution**: E2B Code Interpreter and a configurable sandbox template
 - **UI Components**: Radix UI, shadcn, Lucide icons
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - PostgreSQL database
-- Clerk API keys
-- OpenAI or Gemini API key
-- E2B API key (optional, for code execution)
+- Clerk application keys
+- OpenAI API key
+- E2B sandbox template ID
 
 ### Installation
 
@@ -48,19 +48,25 @@ cd z0
 npm install
 ```
 
-3. Set up environment variables by creating a `.env.local` file with:
+3. Create `.env.local` with the variables required by the application:
 ```
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
 CLERK_SECRET_KEY=your_clerk_secret
 DATABASE_URL=postgresql://user:password@localhost/z0_db
-INNGEST_EVENT_KEY=your_inngest_key
 OPENAI_API_KEY=your_openai_key
-E2B_API_KEY=your_e2b_key
+E2B_SANDBOX_TEMPLATE_ID=your_e2b_template_id
 ```
 
-4. Set up the database:
+`DATABASE_URL` is used by Prisma 7 through [prisma.config.ts](prisma.config.ts). The Clerk keys protect authenticated routes, and the OpenAI and E2B values are needed to generate and preview applications.
+
+4. Apply the database migrations:
 ```bash
 npx prisma migrate dev
+```
+
+5. Start the Inngest development server in a second terminal so background generation functions can be invoked:
+```bash
+npx inngest-cli@latest dev
 ```
 
 ### Running the Development Server
@@ -69,7 +75,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+Open [http://localhost:3000](http://localhost:3000) in your browser. The Inngest development UI is available at [http://localhost:8288](http://localhost:8288).
 
 ## Project Structure
 
@@ -93,14 +99,14 @@ src/
 └── generated/          # Generated Prisma types
 ```
 
-## Database Schema
+## Data Model
 
-The application uses three main models:
+The application stores four related Prisma models:
 
-- **User**: Stores user profile information (via Clerk)
-- **Project**: Represents a user's project with metadata
-- **Message**: Conversation history (user prompts and AI responses)
-- **Fragment**: Generated code artifacts with sandbox URLs and file contents
+- **User**: Clerk-linked user profile information
+- **Project**: A user's project and its metadata
+- **Message**: User prompts and assistant results or errors
+- **Fragment**: Generated files, title, and sandbox URL for a result message
 
 ## Building and Deployment
 
@@ -117,8 +123,9 @@ npm start
 ## Development
 
 - **Linting**: `npm run lint`
+- **Type checking**: `npx tsc --noEmit`
 - **Database Studio**: `npx prisma studio` (view and edit data)
-- **Database Migrations**: `npx prisma migrate dev` (create schema changes)
+- **Database Migrations**: `npx prisma migrate dev` (apply or create local migrations)
 
 ## License
 
